@@ -1,0 +1,75 @@
+from flux_api_integration import FluxAPIClient
+import os 
+from tqdm.auto import tqdm
+
+json={
+  "1": ["a green cat", "a blue cat"],
+  "2": ["a green dog", "a blue dog"],
+  "3": ["a green horse", "a blue horse"]
+}
+
+flux = FluxAPIClient()
+
+def batch_generator(prompts_list: dict):
+    json = prompts_list.copy()
+    width = 1280
+    height = 720
+    guidance_scale = [3.5, 5]
+    num_inference_steps = 5
+    path = "outputs/teststory"
+    os.makedirs(path, exist_ok=True)
+    left_prompts = []
+
+    for i, prompts in tqdm(json.items()):
+        for prompt in prompts:
+            try:
+                for g in guidance_scale:
+                    filename = f"{path}/{i}-{prompt} cfg{g}.png"
+                    try:
+                        # Check the return value to see if generation succeeded
+                        result = flux.generate_and_save(
+                            prompt=prompt,
+                            width=width, 
+                            height=height, 
+                            num_inference_steps=num_inference_steps,  
+                            filename=filename,
+                            guidance_scale=g,
+                            timeout=600
+                        )
+                        
+                        # Only print success if result is not None
+                        if result is not None:
+                            print(f"✅scene {i}, {prompt}, cfg {g} created successfully")
+                        else:
+                            print(f"❌scene {i}, {prompt}, cfg {g} generation failed!!")
+                            # Add failed prompt info to left_prompts
+                            failed_info = f"{i}-{prompt}-cfg{g}"
+                            if failed_info not in left_prompts:
+                                left_prompts.append(failed_info)
+                                
+                    except Exception as e:
+                        print(f"❌scene {i}, {prompt}, cfg {g} generation failed!!")
+                        print(f"Error: {e}")
+                        # Add failed prompt info to left_prompts
+                        failed_info = f"{i}-{prompt}-cfg{g}"
+                        if failed_info not in left_prompts:
+                            left_prompts.append(failed_info)
+
+            except Exception as e:
+                print(f"Error processing scene {i}: {e}")
+                # Add the entire scene to left_prompts if there's a major error
+                if i not in left_prompts:
+                    left_prompts.append(f"scene-{i}")
+
+    # Write failed prompts to file
+    with open(f"{path}/left_prompts.txt", "w") as f:
+        for failed_prompt in left_prompts:
+            f.write(f"{i}\n")
+    
+    # Print summary
+    print(f"\nGeneration Summary:")
+    print(f"Total failed items: {len(left_prompts)}")
+    if left_prompts:
+        print(f"Failed items written to: {path}/left_prompts.txt")
+
+batch_generator(json)

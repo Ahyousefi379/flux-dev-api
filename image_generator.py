@@ -1,20 +1,19 @@
 # Example 1: Simple integration in your existing program
-from fileinput import filename
-from turtle import width
+
 from flux_api_integration import FluxAPIClient, AsyncFluxAPIClient
 import numpy as np
 
 
 # Method 1: Using the client class
-def my_program_with_flux():
+def flux_generator():
     # Initialize the Flux client
     flux = FluxAPIClient()
     
     # Generate an image during your program execution
     prompt = "zeus, realistic, sitting on his throne, eyes blasting with blue lightning, muscular, long white beard, epic, realistic, 4k, hgihly detailed"
     filename="testpng308.png" 
-    num_inference_steps=30
-    guidance_scale=8
+    num_inference_steps=25
+    guidance_scale=4
     width=1280
     height=720
     #seed = np.random.random_integers(low=1,high=18446744073709552000)
@@ -29,7 +28,7 @@ def my_program_with_flux():
                                 guidance_scale=guidance_scale,
                                 width=width,
                                 height=height,
-                                seed=seed,
+                                #seed=seed,
                                 timeout=timeout
                                 )
     
