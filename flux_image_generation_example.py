@@ -31,7 +31,6 @@ def flux_generator():
                                 timeout=timeout
                                 )
     
-my_program_with_flux()
 
 
 
