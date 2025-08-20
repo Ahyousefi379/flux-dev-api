@@ -1,4 +1,4 @@
-from flux_api_integration import FluxAPIClient
+from video_generation_tools.image_generation.flux_image_generation_api import FluxAPIClient
 import os 
 from tqdm.auto import tqdm
 from random import randint

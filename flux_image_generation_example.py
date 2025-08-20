@@ -1,7 +1,6 @@
 # Example 1: Simple integration in your existing program
 
-from flux_api_integration import FluxAPIClient, AsyncFluxAPIClient
-import numpy as np
+from video_generation_tools.image_generation.flux_image_generation_api import FluxAPIClient, AsyncFluxAPIClient
 
 
 # Method 1: Using the client class
