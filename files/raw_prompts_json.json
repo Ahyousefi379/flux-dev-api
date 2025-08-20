@@ -1,6 +1,0 @@
-{
-        "scene_1": ["Only one prompt"],
-        "2": ["Two prompts", "Good format"],
-        "3": [123, "Mixed types"],
-        "4": "Not a list"
-    }

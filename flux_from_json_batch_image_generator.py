@@ -1,4 +1,4 @@
-from video_generation_tools.image_generation.flux_image_generation_api import FluxAPIClient
+from flux_image_generation_api import FluxAPIClient
 import os 
 from tqdm.auto import tqdm
 from random import randint
@@ -15,70 +15,77 @@ json={
 flux = FluxAPIClient()
 
 
-def batch_generator(prompts_list: dict):
+def batch_generator(prompts_list: dict, width = 1280, height = 720, guidance_scale=[3.5, 2], num_inference_steps = 28, output_dir = "video_generation_tools/image_generation/outputs/temp", is_regeneration=False):
     json = prompts_list.copy()
-    width = 1280
-    height = 720
-    guidance_scale = [3.5, 2]
-    num_inference_steps = 28
-    path = "outputs/teststory"
-    os.makedirs(path, exist_ok=True)
-    left_prompts = []
+    os.makedirs(output_dir, exist_ok=True)
+    failed_prompts = []
+    if is_regeneration:
+        with open(f"{output_dir}/failed_prompts.txt", "r") as f:
+            previously_failed_prompts = f.read().strip().split(" ")
+            previously_succeeded_prompts= [i for i in json.keys() if i not in previously_failed_prompts]
+    else:
+        previously_succeeded_prompts = []
+
+    
+
 
     for i, prompts in tqdm(json.items()):
-        scene_has_failure = False  # Track if any prompt in this scene fails
-        
-        for prompt in prompts:
 
-            try:
-                for g in guidance_scale:
+        scene_has_failure = False  # Track if any prompt in this scene fails        
 
-                    seed = randint(42,18446744073709552000)
-                    filename = f"{path}/{i}-{prompt} cfg{g}28 seed{seed}.png"
-                
-                    try:
-                        # Check the return value to see if generation succeeded
-                        result = flux.generate_and_save(
-                            prompt=prompt,
-                            width=width, 
-                            height=height, 
-                            num_inference_steps=num_inference_steps,  
-                            filename=filename,
-                            guidance_scale=g,
-                            timeout=600,
-                            seed= seed
-                        )
-                        
-                        # Only print success if result is not None
-                        if result is not None:
-                            print(f"✅scene {i}, {prompt}, cfg {g} created successfully")
-                        else:
+        if i not in previously_succeeded_prompts:
+
+            for prompt in prompts:
+
+                try:
+                    for g in guidance_scale:
+
+                        seed = randint(42,18446744073709552000)
+                        filename = f"{output_dir}/{i}-{prompt} cfg{g} {num_inference_steps}steps seed{seed}.png"
+
+                        try:
+                            # Check the return value to see if generation succeeded
+                            result = flux.generate_and_save(
+                                prompt=prompt,
+                                width=width, 
+                                height=height, 
+                                num_inference_steps=num_inference_steps,  
+                                filename=filename,
+                                guidance_scale=g,
+                                timeout=6,
+                                seed= seed
+                            )
+
+                            # Only print success if result is not None
+                            if result is not None:
+                                print(f"✅scene {i}, {prompt}, cfg {g} created successfully")
+                            else:
+                                print(f"❌scene {i}, {prompt}, cfg {g} generation failed!!")
+                                scene_has_failure = True
+
+                        except Exception as e:
                             print(f"❌scene {i}, {prompt}, cfg {g} generation failed!!")
+                            print(f"Error: {e}")
                             scene_has_failure = True
-                                
-                    except Exception as e:
-                        print(f"❌scene {i}, {prompt}, cfg {g} generation failed!!")
-                        print(f"Error: {e}")
-                        scene_has_failure = True
 
-            except Exception as e:
-                print(f"Error processing scene {i}: {e}")
-                scene_has_failure = True
+                except Exception as e:
+                    print(f"Error processing scene {i}: {e}")
+                    scene_has_failure = True
         
-        # Add scene index to left_prompts if any generation failed
-        if scene_has_failure :
-            left_prompts.append(i)
+            # Add scene index to failed_prompts if any generation failed
+            if scene_has_failure :
+                failed_prompts.append(i)
 
     # Write failed scene indices to file
-    with open(f"{path}/left_prompts.txt", "w") as f:
-        for failed_scene in left_prompts:
+    with open(f"{output_dir}/failed_prompts.txt", "w") as f:
+        for failed_scene in failed_prompts:
             f.write(f"{failed_scene} ")  # Fixed: now writes the actual failed scene index
     
     # Print summary
     print(f"\nGeneration Summary:")
-    print(f"Total failed scenes: {len(left_prompts)}")
-    if left_prompts:
-        print(f"Failed scene indices: {left_prompts}")
-        print(f"Failed scenes written to: {path}/left_prompts.txt")
+    print(f"Total failed scenes: {len(failed_prompts)}")
+    if failed_prompts:
+        print(f"Failed scene indices: {failed_prompts}")
+        print(f"Failed scenes written to: {output_dir}/failed_prompts.txt")
 
-batch_generator(json)
+batch_generator(json,is_regeneration=True)
