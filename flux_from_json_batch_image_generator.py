@@ -15,7 +15,7 @@ json={
 flux = FluxAPIClient()
 
 
-def batch_generator(prompts_list: dict, width = 1280, height = 720, guidance_scale=[3.5, 2], num_inference_steps = 28, output_dir = "video_generation_tools/image_generation/outputs/temp", is_regeneration=False):
+def batch_generator(prompts_list: dict, width = 1280, height = 720, guidance_scale=[3.5, 2], num_inference_steps = 28, output_dir = "video_generation_tools/image_generation/outputs", is_regeneration=False):
     json = prompts_list.copy()
     os.makedirs(output_dir, exist_ok=True)
     failed_prompts = []

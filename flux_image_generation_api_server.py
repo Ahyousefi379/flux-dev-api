@@ -95,7 +95,7 @@ class FluxLitAPI(ls.LitAPI):
             # This scheduler is specifically designed for FLUX models and handles
             # the denoising process during image generation
             scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
-                "black-forest-labs/FLUX.1-dev", 
+                "black-forest-labs/FLUX.1-Krea-dev", # or change with black-forest-labs/FLUX.1-dev 
                 subfolder="scheduler"
             )
             
@@ -114,21 +114,21 @@ class FluxLitAPI(ls.LitAPI):
             # Load T5 text encoder (secondary, more powerful text understanding)
             # T5 provides better understanding of complex prompts and relationships
             text_encoder_2 = T5EncoderModel.from_pretrained(
-                "black-forest-labs/FLUX.1-dev", 
+                "black-forest-labs/FLUX.1-Krea-dev", # or change with black-forest-labs/FLUX.1-dev 
                 subfolder="text_encoder_2", 
                 torch_dtype=torch.bfloat16
             )
             
             # Load T5 tokenizer for the secondary text encoder
             tokenizer_2 = T5TokenizerFast.from_pretrained(
-                "black-forest-labs/FLUX.1-dev", 
+                "black-forest-labs/FLUX.1-Krea-dev", # or change with black-forest-labs/FLUX.1-dev 
                 subfolder="tokenizer_2"
             )
             
             # Load Variational Autoencoder (VAE) for encoding/decoding images
             # Converts between pixel space and latent space for efficient processing
             vae = AutoencoderKL.from_pretrained(
-                "black-forest-labs/FLUX.1-dev", 
+                "black-forest-labs/FLUX.1-Krea-dev", # or change with black-forest-labs/FLUX.1-dev
                 subfolder="vae", 
                 torch_dtype=torch.bfloat16
             )
@@ -136,7 +136,7 @@ class FluxLitAPI(ls.LitAPI):
             # Load the main FLUX transformer model
             # This is the core component that generates images from text embeddings
             transformer = FluxTransformer2DModel.from_pretrained(
-                "black-forest-labs/FLUX.1-dev", 
+                "black-forest-labs/FLUX.1-Krea-dev", # or change with black-forest-labs/FLUX.1-dev
                 subfolder="transformer", 
                 torch_dtype=torch.bfloat16
             )

@@ -1,5 +1,4 @@
 import os
-from Archived.story_processor.story_processor import prompts
 from flux_from_json_batch_image_generator import batch_generator
 
 #from json_prompt_validator import validate_and_fix_json, save_json
@@ -24,17 +23,19 @@ from flux_from_json_batch_image_generator import batch_generator
 
 
 # batch generation
+story_name="test"
+output_dir = f"video_generation/image_generation/outputs/{story_name}"
+
+
 
 # reading prompts
-file_path = os.path.join("video_generation_tools", "image_generation", "files", "prompts.json")
+file_path = os.path.join("video_generation_tools", "image_generation",output_dir, "prompts.json")
 with open(file_path, "r", encoding="utf-8") as f:
     prompts_json = f.read()
 
 
-story_name="test"
 is_regeneration=False
 
-output_dir = f"video_generation/image_generation/outputs/{story_name}"
 
 
 batch_generator(prompts_json,
