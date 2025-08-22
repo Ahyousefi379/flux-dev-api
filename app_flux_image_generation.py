@@ -1,9 +1,6 @@
 import os
+import json
 from flux_from_json_batch_image_generator import batch_generator
-
-#from json_prompt_validator import validate_and_fix_json, save_json
-
-
 
 # json validation will be done using online larger models
 
@@ -24,14 +21,14 @@ from flux_from_json_batch_image_generator import batch_generator
 
 # batch generation
 story_name="test"
-output_dir = f"video_generation/image_generation/stories/{story_name}"
+output_dir = f"video_generation_tools/image_generation/stories/{story_name}"
 
-
-
-# reading prompts
+# reading prompts (fixed)
 file_path = os.path.join(output_dir, "prompts.json")
+if not os.path.exists(file_path):
+    raise FileNotFoundError(f"Prompts file not found: {file_path}")
 with open(file_path, "r", encoding="utf-8") as f:
-    prompts_json = f.read()
+    prompts_json = json.load(f)
 
 
 is_regeneration=False
@@ -44,4 +41,5 @@ batch_generator(prompts_json,
                 guidance_scale=[3.5,2],
                 num_inference_steps=28,
                 output_dir=output_dir,
-                is_regeneration= is_regeneration)
+                is_regeneration= is_regeneration,
+                timeout=600)

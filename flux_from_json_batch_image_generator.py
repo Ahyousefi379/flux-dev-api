@@ -20,8 +20,9 @@ def batch_generator(prompts_list: dict,
                     height = 720, 
                     guidance_scale=[3.5, 2], 
                     num_inference_steps = 28, 
-                    output_dir = "video_generation/image_generation/stories/test",
-                      is_regeneration=False):
+                    output_dir = "video_generation/image_generation/stories/test/",
+                    timeout=600,
+                    is_regeneration=False):
     
     json = prompts_list.copy()
 
@@ -65,7 +66,7 @@ def batch_generator(prompts_list: dict,
                                 num_inference_steps=num_inference_steps,  
                                 filename=filename,
                                 guidance_scale=g,
-                                timeout=6,
+                                timeout=timeout,
                                 seed= seed
                             )
 

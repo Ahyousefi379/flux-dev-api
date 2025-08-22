@@ -1,293 +1,238 @@
-"""
-Flux Image Generation API using LitServe
-
-This module implements a FastAPI-based image generation service using the FLUX.1-dev model
-from Black Forest Labs. The service uses 8-bit quantization to optimize memory usage
-and enable deployment on lower-end GPUs like the T4 or L4.
-
-Key Features:
-- FLUX.1-dev model for high-quality image generation
-- 8-bit quantization for memory efficiency
-- Customizable generation parameters
-- RESTful API interface via LitServe
-- Comprehensive error handling and logging
-"""
-
-from io import BytesIO
-from fastapi import Response, HTTPException
-from pydantic import BaseModel, Field
-import torch
-import time
-import litserve as ls
-from optimum.quanto import freeze, qfloat8, quantize
-from diffusers.schedulers.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
-from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
-from diffusers.models.transformers.transformer_flux import FluxTransformer2DModel
-from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
-from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
+import requests
+import io
+from PIL import Image
+import base64
+import asyncio
+import aiohttp
+from typing import Optional, Union, List
 import logging
-from typing import Optional
+from datetime import datetime
+import os
 
-# Configure logging to provide detailed information about the API operations
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-class FluxRequest(BaseModel):
+class FluxAPIClient:
     """
-    Pydantic model defining the request structure for image generation.
-    
-    This model validates incoming requests and provides default values
-    for optional parameters. All fields include validation constraints
-    to ensure reasonable values are provided.
+    A client class for integrating with the Flux API in your Python programs
     """
-    
-    # Main text prompt that describes the desired image
-    prompt: str = Field(..., description="Text prompt for image generation")
-    
-    # TODO: Uncomment and implement negative prompts if needed for better control
-    # negative_prompt: str = Field(default=None, description="Negative text prompt for image generation")
-    
-    # Number of denoising steps - higher values generally produce better quality but take longer
-    # Range: 1-50 steps (4 is optimized for speed while maintaining quality)
-    num_inference_steps: int = Field(default=4, ge=1, le=50, description="Number of inference steps")
-    
-    # Guidance scale controls how closely the model follows the prompt
-    # Higher values = more adherence to prompt, lower values = more creative freedom
-    guidance_scale: float = Field(default=3.5, ge=1.0, le=20.0, description="Guidance scale")
-    
-    # Image dimensions - constrained to reasonable ranges for memory and quality
-    # Both width and height must be between 512-2048 pixels
-    width: int = Field(default=1024, ge=512, le=2048, description="Image width")
-    height: int = Field(default=1024, ge=512, le=2048, description="Image height")
-    
-    # Optional seed for reproducible generation - if None, uses current timestamp
-    seed: Optional[int] = Field(default=None, description="Random seed for reproducibility")
-
-class FluxLitAPI(ls.LitAPI):
-    """
-    Main API class implementing the LitServe interface for FLUX image generation.
-    
-    This class handles the complete lifecycle of the image generation service:
-    - Model loading and quantization during setup
-    - Request validation and processing
-    - Image generation using the FLUX pipeline
-    - Response encoding and error handling
-    """
-    
-    def setup(self, device):
-        """
-        Initialize and configure the FLUX model pipeline with memory-efficient loading.
+    url="https://8000-01jys6rf4f2pnt32wttv0rt57f.cloudspaces.litng.ai/predict"
+    url="https://8000-01jys6rf4f2pnt32wttv0rt57f.cloudspaces.litng.ai/predict"
+  
+    def __init__(self, api_url: str = url):
+        self.api_url = api_url
+        self.session = requests.Session()
+        self.session.headers.update({"Content-Type": "application/json"})
         
-        This method is called once when the server starts. It loads all required
-        model components, applies 8-bit quantization for memory efficiency,
-        and sets up the complete generation pipeline. This version loads large
-        components sequentially to avoid VRAM overflow on GPUs like the T4.
+        # Set up logging
+        self.logger = logging.getLogger(__name__)
+    
+    def generate_image(
+        self,
+        prompt: str,
+#        negative_prompt:str = None,
+        num_inference_steps: int = 28,
+        guidance_scale: float = 3.5,
+        width: int = 1920,
+        height: int = 1080,
+        seed: Optional[int] = None,
+        timeout: int = 300
+    ) -> Optional[Image.Image]:
+        """
+        Generate an image and return it as a PIL Image object
         
         Args:
-            device: The device to run the model on (automatically handled by LitServe)
-            
-        Raises:
-            Exception: If any component fails to load or configure
-        """
-        try:
-            logger.info("Loading Flux model components sequentially to conserve VRAM...")
-            
-            # Define the main model ID and data type
-            model_id = "black-forest-labs/FLUX.1-Krea-dev"
-            dtype = torch.bfloat16
-
-            # --- Load, Quantize, and Offload Large Components One-by-One ---
-
-            # 1. Load and process the main Transformer
-            logger.info("Loading and quantizing transformer...")
-            transformer = FluxTransformer2DModel.from_pretrained(
-                model_id, subfolder="transformer", torch_dtype=dtype
-            )
-            quantize(transformer, weights=qfloat8)
-            freeze(transformer)
-            transformer.to("cpu") # Move to CPU to free up VRAM
-            torch.cuda.empty_cache() # Clear cache
-
-            # 2. Load and process the T5 Text Encoder
-            logger.info("Loading and quantizing text_encoder_2...")
-            text_encoder_2 = T5EncoderModel.from_pretrained(
-                model_id, subfolder="text_encoder_2", torch_dtype=dtype
-            )
-            quantize(text_encoder_2, weights=qfloat8)
-            freeze(text_encoder_2)
-            text_encoder_2.to("cpu") # Move to CPU
-            torch.cuda.empty_cache()
-
-            # --- Load Smaller Components ---
-            logger.info("Loading remaining components...")
-            
-            # VAE can also be large, so we load it last before creating the pipeline
-            vae = AutoencoderKL.from_pretrained(model_id, subfolder="vae", torch_dtype=dtype)
-
-            # Smaller components that should fit in memory
-            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-            text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype)
-            tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-            tokenizer_2 = T5TokenizerFast.from_pretrained(model_id, subfolder="tokenizer_2")
-
-            logger.info("All components loaded. Creating pipeline...")
-            
-            # Create the complete FLUX pipeline with all components
-            self.pipe = FluxPipeline(
-                scheduler=scheduler,
-                text_encoder=text_encoder,
-                tokenizer=tokenizer,
-                text_encoder_2=text_encoder_2,
-                tokenizer_2=tokenizer_2,
-                vae=vae,
-                transformer=transformer,
-            )
-            
-            # Now that the pipeline is built, enable model offloading for inference
-            self.pipe.enable_model_cpu_offload()
-            
-            logger.info("Model setup complete and ready for inference!")
-            
-        except Exception as e:
-            logger.error(f"Error during model setup: {str(e)}")
-            raise e
-
-    def decode_request(self, request):
-        """
-        Parse and validate incoming requests.
-        
-        Converts the raw request data into a validated FluxRequest object,
-        ensuring all parameters are within acceptable ranges and properly formatted.
-        
-        Args:
-            request: Raw request data (dict or FluxRequest object)
+            prompt: Text description for image generation
+            negative_prompt: negative Text description for image generation
+            num_inference_steps: Number of denoising steps (1-50)
+            guidance_scale: How closely to follow the prompt (1.0-20.0)
+            width: Image width in pixels (512-2048)
+            height: Image height in pixels (512-2048)
+            seed: Random seed for reproducible results
+            timeout: Request timeout in seconds
             
         Returns:
-            FluxRequest: Validated request object
-            
-        Raises:
-            HTTPException: If request validation fails
+            PIL Image object or None if generation failed
         """
+        payload = {
+            "prompt": prompt,
+            "num_inference_steps": num_inference_steps,
+            "guidance_scale": guidance_scale,
+            "width": width,
+            "height": height
+        }
+        
+        if seed is not None:
+            payload["seed"] = seed
+#        if negative_prompt  is not None:
+#            payload["negative_prompt"] =negative_prompt 
+        
         try:
-            # Handle both dictionary and object inputs
-            if isinstance(request, dict):
-                flux_request = FluxRequest(**request)
+            self.logger.info(f"Generating image: {prompt[:50]}...")
+            
+            response = self.session.post(
+                self.api_url,
+                json=payload,
+                timeout=timeout
+            )
+            
+            if response.status_code == 200:
+                # Convert bytes to PIL Image
+                image = Image.open(io.BytesIO(response.content))
+                self.logger.info("Image generated successfully")
+                return image
             else:
-                flux_request = request
-            
-            # Log the first 50 characters of the prompt for debugging
-            logger.info(f"Processing request: {flux_request.prompt[:50]}...")
-            return flux_request
-            
+                self.logger.error(f"API request failed: {response.status_code} - {response.text}")
+                return None
+                
         except Exception as e:
-            logger.error(f"Error decoding request: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Invalid request format: {str(e)}")
-
-    def predict(self, flux_request: FluxRequest):
+            self.logger.error(f"Error generating image: {str(e)}")
+            return None
+    
+    def generate_and_save(
+        self,
+        prompt: str,
+        filename: Optional[str] = None,
+        **kwargs
+    ) -> Optional[str]:
         """
-        Generate an image based on the provided request parameters.
+        Generate an image and save it to disk
         
-        This method handles the core image generation process, including:
-        - Setting up the random number generator for reproducibility
-        - Configuring generation parameters
-        - Running the FLUX pipeline to create the image
-        
-        Args:
-            flux_request (FluxRequest): Validated request containing generation parameters
-            
         Returns:
-            PIL.Image: Generated image object
-            
-        Raises:
-            HTTPException: If image generation fails
+            Filepath if successful, None if failed
+        """
+        image = self.generate_image(prompt, **kwargs)
+        
+        if image is None:
+            return None
+        
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"flux_generated_{timestamp}.png"
+        
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else ".", exist_ok=True)
+            image.save(filename)
+            self.logger.info(f"Image saved to: {filename}")
+            return filename
+        except Exception as e:
+            self.logger.error(f"Error saving image: {str(e)}")
+            return None
+   
+    def batch_generate(
+        self,
+        prompts: List[str],
+        **kwargs
+    ) -> List[Optional[Image.Image]]:
+        """
+        Generate multiple images from a list of prompts
+        
+        Returns:
+            List of PIL Images (None for failed generations)
+        """
+        results = []
+        
+        for i, prompt in enumerate(prompts):
+            self.logger.info(f"Generating image {i+1}/{len(prompts)}")
+            image = self.generate_image(prompt, **kwargs)
+            results.append(image)
+        
+        return results
+    
+    def is_server_healthy(self) -> bool:
+        """
+        Check if the API server is responding
         """
         try:
-            logger.info(f"Generating image with steps={flux_request.num_inference_steps}, guidance={flux_request.guidance_scale}")
-            
-            # Set up the random number generator for reproducible results
-            generator = torch.Generator()
-            if flux_request.seed is not None:
-                # Use provided seed for reproducible generation
-                generator.manual_seed(flux_request.seed)
-            else:
-                # Use current timestamp as seed if none provided
-                generator.manual_seed(int(time.time()))
-            
-            # Run the FLUX pipeline to generate the image
-            # This is where the actual image generation happens
-            image = self.pipe(
-                prompt=flux_request.prompt,                      # Text description of desired image
-                width=flux_request.width,                        # Output image width
-                height=flux_request.height,                      # Output image height
-                num_inference_steps=flux_request.num_inference_steps,  # Number of denoising steps
-                generator=generator,                             # Random number generator
-                guidance_scale=flux_request.guidance_scale,      # How closely to follow the prompt
-            ).images[0]  # Get the first (and only) generated image
-
-            logger.info("Image generation complete!")
-            return image
-            
-        except Exception as e:
-            logger.error(f"Error during prediction: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
-
-    def encode_response(self, image):
-        """
-        Convert the generated PIL image into an HTTP response.
-        
-        This method handles the final step of the API pipeline by:
-        - Converting the PIL image to PNG format
-        - Creating an HTTP response with appropriate headers
-        - Setting proper content type and disposition
-        
-        Args:
-            image (PIL.Image): The generated image to encode
-            
-        Returns:
-            Response: FastAPI Response object containing the PNG image
-            
-        Raises:
-            HTTPException: If image encoding fails
-        """
-        try:
-            # Create an in-memory buffer to hold the PNG data
-            buffered = BytesIO()
-            
-            # Save the image as PNG to the buffer
-            # PNG format is chosen for lossless quality and broad compatibility
-            image.save(buffered, format="PNG")
-            buffered.seek(0)  # Reset buffer position to beginning
-            
-            # Create HTTP response with proper headers
-            return Response(
-                content=buffered.getvalue(),                      # PNG image data
-                media_type="image/png",                           # MIME type
-                headers={
-                    "Content-Type": "image/png",                  # Explicit content type
-                    "Content-Disposition": "inline; filename=generated_image.png"  # Suggest filename
-                }
+            # Try a simple test request
+            response = self.session.post(
+                self.api_url,
+                json={"prompt": "test"},
+                timeout=10
             )
-            
-        except Exception as e:
-            logger.error(f"Error encoding response: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to encode image: {str(e)}")
+            return response.status_code in [200, 400]  # 400 is also okay, means server is responding
+        except:
+            return False
 
-# Server startup and configuration
+# Async version for better performance in async applications
+class AsyncFluxAPIClient:
+    """
+    Async version of the Flux API client for better performance in async applications
+    """
+    
+    def __init__(self, api_url: str = "https://8000-01jys6rf4f2pnt32wttv0rt57f.cloudspaces.litng.ai/predict"):
+        self.api_url = api_url
+        self.logger = logging.getLogger(__name__)
+    
+    async def generate_image(
+        self,
+        prompt: str,
+        #negative_prompt :str = None,
+        num_inference_steps: int = 4,
+        guidance_scale: float = 3.5,
+        width: int = 1024,
+        height: int = 1024,
+        seed: Optional[int] = None,
+        timeout: int = 300
+    ) -> Optional[Image.Image]:
+        """
+        Async version of image generation
+        """
+        payload = {
+            "prompt": prompt,
+            "num_inference_steps": num_inference_steps,
+            "guidance_scale": guidance_scale,
+            "width": width,
+            "height": height
+        }
+        
+        if seed is not None:
+            payload["seed"] = seed
+#       if negative_prompt is not None:
+#           payload["negative_prompt"] = negative_prompt 
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.api_url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as response:
+                    
+                    if response.status == 200:
+                        content = await response.read()
+                        image = Image.open(io.BytesIO(content))
+                        return image
+                    else:
+                        error_text = await response.text()
+                        self.logger.error(f"API request failed: {response.status} - {error_text}")
+                        return None
+                        
+        except Exception as e:
+            self.logger.error(f"Error generating image: {str(e)}")
+            return None
+    
+    async def batch_generate_async(
+        self,
+        prompts: List[str],
+        **kwargs
+    ) -> List[Optional[Image.Image]]:
+        """
+        Generate multiple images concurrently
+        """
+        tasks = [self.generate_image(prompt, **kwargs) for prompt in prompts]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Handle exceptions
+        clean_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                self.logger.error(f"Generation failed: {str(result)}")
+                clean_results.append(None)
+            else:
+                clean_results.append(result)
+        
+        return clean_results
+
 if __name__ == "__main__":
-    """
-    Main entry point for the application.
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
     
-    Creates the API instance and starts the LitServe server.
-    The server will listen on port 8000 and handle incoming requests.
-    """
-    
-    # Create an instance of the FLUX API
-    api = FluxLitAPI()
-    
-    # Create LitServer with the API instance
-    # timeout=False allows for longer generation times without timing out
-    server = ls.LitServer(api, timeout=False)
-    
-    # Start the server on port 8000
-    # The server will be accessible at http://localhost:8000
-    server.run(port=8000)

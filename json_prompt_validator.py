@@ -14,7 +14,7 @@ def fix_json_with_llm(malformed_json):
     # Simple LLM setup
     llm = ChatGroq(api_key=api_key, model="llama-3.1-8b-instant", temperature=0)
     
-    prompt = f"""Fix this JSON to match the exact format. Return ONLY the JSON, no explanations:
+    prompt = f"""validate or Fix this JSON to match the exact format. if it's already valied, say only a word that its valid. being vaild means both being a valid json and also for all numbers that are ordered, there's 2 prompts. if needs fix,Return ONLY the fixed JSON, no explanations unless in case of missing prompts and adding  prompts:    
 
 {{
   "1": ["prompt1", "prompt2"],
@@ -26,7 +26,7 @@ Rules:
 - Keys must be "1", "2", "3", etc.
 - Each key has exactly 2 string prompts
 - Keep original prompt text where possible
-- If only 1 prompt exists, place "blue screen" instead of the missing one
+- If only 1 prompt exists, add the second prompt something similar to the first one
 - Convert non-string prompts to strings
 
 Broken JSON to fix:
