@@ -13,8 +13,8 @@ class FluxAPIClient:
     """
     A client class for integrating with the Flux API in your Python programs
     """
-    url="https://8000-01jys6rf4f2pnt32wttv0rt57f.cloudspaces.litng.ai/predict"
-    url="https://8000-01jys6rf4f2pnt32wttv0rt57f.cloudspaces.litng.ai/predict"
+    url="https://8000-01k36mysbt7fydtgwp3ph1ab90.cloudspaces.litng.ai/predict"
+
   
     def __init__(self, api_url: str = url):
         self.api_url = api_url
