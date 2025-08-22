@@ -24,12 +24,12 @@ from flux_from_json_batch_image_generator import batch_generator
 
 # batch generation
 story_name="test"
-output_dir = f"video_generation/image_generation/outputs/{story_name}"
+output_dir = f"video_generation/image_generation/stories/{story_name}"
 
 
 
 # reading prompts
-file_path = os.path.join("video_generation_tools", "image_generation",output_dir, "prompts.json")
+file_path = os.path.join(output_dir, "prompts.json")
 with open(file_path, "r", encoding="utf-8") as f:
     prompts_json = f.read()
 

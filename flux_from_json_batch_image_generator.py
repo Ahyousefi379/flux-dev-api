@@ -15,12 +15,25 @@ json={
 flux = FluxAPIClient()
 
 
-def batch_generator(prompts_list: dict, width = 1280, height = 720, guidance_scale=[3.5, 2], num_inference_steps = 28, output_dir = "video_generation_tools/image_generation/outputs", is_regeneration=False):
+def batch_generator(prompts_list: dict,
+                    width = 1280, 
+                    height = 720, 
+                    guidance_scale=[3.5, 2], 
+                    num_inference_steps = 28, 
+                    output_dir = "video_generation/image_generation/stories/test",
+                      is_regeneration=False):
+    
     json = prompts_list.copy()
-    os.makedirs(output_dir, exist_ok=True)
+
     failed_prompts = []
+    os.makedirs(output_dir, exist_ok=True) 
+    failed_prompts_file = f"{output_dir}/failed_prompts.txt"
+    if not os.path.exists(failed_prompts_file):
+        with open(failed_prompts_file, "w") as f:
+            f.write("")
+        
     if is_regeneration:
-        with open(f"{output_dir}/failed_prompts.txt", "r") as f:
+        with open(f"{output_dir}/failed_prompts.txt", "r",) as f:
             previously_failed_prompts = f.read().strip().split(" ")
             previously_succeeded_prompts= [i for i in json.keys() if i not in previously_failed_prompts]
     else:
